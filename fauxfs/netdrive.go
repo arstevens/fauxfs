@@ -1,4 +1,4 @@
-package main
+package fauxfs
 
 import (
 	"context"
@@ -16,18 +16,28 @@ import (
 	"google.golang.org/api/option"
 )
 
-const FileIDLength = 8
+// Length of internal file ids generated for network drive storage
+const fileIDLength = 8
 
-// Interface describing any networked drive
-type NetDrive interface {
+// Interface describing metadata capabilities of network drive
+type NetDriveMetadata interface {
+	// Return used space and total space in bytes
+	GetSpace() (int64, int64, error)
+}
+
+// Interface describing storage capabilities of network drive
+type NetDriveStorage interface {
 	// Download the file with fileID to out
 	Download(fileID string, out io.Writer) error
 
 	// Upload the file from in and return its fileID
 	Upload(in io.Reader) (string, error)
+}
 
-	// Return used space and total space in bytes
-	GetSpace() (int64, int64, error)
+// Interface describing any networked drive
+type NetDrive interface {
+	NetDriveStorage
+	NetDriveMetadata
 }
 
 // Google Drive implementation of NetDrive
@@ -59,7 +69,7 @@ func (g *GoogleDrive) Download(fileID string, out io.Writer) error {
 
 func (g *GoogleDrive) Upload(in io.Reader) (string, error) {
 	createCall := g.service.Files.Create(&drive.File{
-		Name:     generateRandomID(FileIDLength),
+		Name:     generateRandomID(fileIDLength),
 		MimeType: "application/octet-stream",
 	}).Media(in)
 
