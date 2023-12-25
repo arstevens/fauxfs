@@ -32,6 +32,8 @@ type NetDriveStorage interface {
 
 	// Upload the file from in and return its fileID
 	Upload(in io.Reader) (string, error)
+
+	Delete(fileID string) error
 }
 
 // Interface describing any networked drive

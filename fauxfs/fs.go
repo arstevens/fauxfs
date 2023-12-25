@@ -18,13 +18,54 @@ type fauxFS struct {
 type netFileHandle struct {
 	fs.Inode
 	open      bool
-	mtime     time.Time
 	bkFile    *os.File
 	bkName    string
-	loadFile  func() (*os.File, string, error)
-	storeFile func(string) error
-
 	mutex *sync.Mutex
+
+	loadFile  func() (*os.File, string, error)
+	storeFile func(io.Reader) error
+}
+
+func newNetFileHandle(internalFname string, drive NetDriveStorage) (*netFileHandle, error) {
+	tmpFile, err := os.CreateTemp("", "faux.*.file") 
+	if err != nil {
+		return nil, err
+	}
+	bkName := tmpFile.Name()
+	tmpFile.Close()
+
+	return &netFileHandle{
+		open: false,
+		bkFile: nil,
+		bkName: "",
+		mutex: &sync.Mutex{},
+		loadFile: func() (*os.File, string, error) {
+			file, err := os.OpenFile(bkName, os.O_RDWR|os.O_CREATE, 644)
+			if err != nil {
+				return nil, "", err
+			}
+			defer file.Close()
+
+			if err = drive.Download(internalFname, file); err != nil {
+				return nil, "", err
+			}
+			if _, err = file.Seek(0, 0); err != nil {
+				return nil, "", err
+			}
+			return file, bkName, nil 
+		},
+		storeFile: func(in io.Reader) (string, error) {
+			if err := drive.Delete(internalFname); err != nil {
+				return "", err
+			}
+
+			fileID, err := drive.Upload(in)
+			if err != nil {
+				return "", err
+			}
+			return fileID, nil
+		},
+	}, nil
 }
 
 func (nf *netFileHandle) openBackingFile() error {
@@ -54,12 +95,13 @@ func (nf *netFileHandle) Flush(ctx context.Context) syscall.Errno {
 	defer nf.mutex.Unlock()
 
 	if nf.open == true {
-		if err := nf.bkFile.Close(); err != nil {
+		if _, err := nf.bkFile.Seek(0, 0); err != nil {
 			return 1
 		}
-		if err := nf.storeFile(nf.bkName); err != nil {
+		if err := nf.storeFile(nf.bkFile); err != nil {
 			return 1
 		}
+		nf.bkFile.Close()
 		nf.open = false
 	}
 	return 0
@@ -107,6 +149,26 @@ func (nf *netFileHandle) Write(ctx context.Context, fh fs.FileHandle, buf []byte
 	return uint32(n), 0
 }
 
-func (root *fauxFS) OnAdd(ctx context.Context) {
+type fauxDirHandle struct {
+	fs.Inode
+	dirEntries map[string]fuse.DirEntry
+}
 
+func (dh *fauxDirHandle) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
+	return fs.NewListDirStream(dh.dirEntries), 0
+}
+
+func (dh *fauxDirHandle) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	for entryName, entry := range dh.dirEntries {
+		if entryName == name {
+			var child *fs.Inode 
+			if entry.Mode == fuse.S_IFREG {
+
+			} else entry.Mode == fuse.S_IFDIR {
+
+			} else {
+
+			}
+		}
+	}
 }
